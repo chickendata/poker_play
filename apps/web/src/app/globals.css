@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #f5f5f5;
+  --card: #1a1a1a;
+  --card-foreground: #f5f5f5;
+  --popover: #1a1a1a;
+  --popover-foreground: #f5f5f5;
+  --primary: #0f5f3f;
+  --primary-foreground: #f5f5f5;
+  --secondary: #1a7f5f;
+  --secondary-foreground: #f5f5f5;
+  --muted: #404040;
+  --muted-foreground: #a0a0a0;
+  --accent: #00ff88;
+  --accent-foreground: #0a0a0a;
+  --destructive: #ff0055;
+  --destructive-foreground: #f5f5f5;
+  --border: #2a2a2a;
+  --input: #2a2a2a;
+  --ring: #00ff88;
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* shared neon animations used across atomic components */
+@keyframes neon-glow {
+  0%, 100% { text-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent), 0 0 30px var(--accent); }
+  50%      { text-shadow: 0 0 20px var(--accent), 0 0 30px var(--accent), 0 0 40px var(--accent); }
+}
+@keyframes neon-border-pulse {
+  0%, 100% { box-shadow: 0 0 10px var(--accent), inset 0 0 10px rgba(0, 255, 136, 0.1); }
+  50%      { box-shadow: 0 0 20px var(--accent), inset 0 0 20px rgba(0, 255, 136, 0.2); }
+}
+@keyframes chip-stack-bob {
+  0%, 100% { transform: translateY(0px) rotateZ(0deg); }
+  50%      { transform: translateY(-4px) rotateZ(2deg); }
+}
+@keyframes felt-shine {
+  0%, 100% { background-position: 200% center; }
+  50%      { background-position: 0% center; }
+}
+
+.neon-text   { animation: neon-glow 2s ease-in-out infinite; }
+.neon-border { animation: neon-border-pulse 2s ease-in-out infinite; }
+.chip-stack-anim { animation: chip-stack-bob 2.5s ease-in-out infinite; }
+.felt-shine {
+  background: linear-gradient(
+    90deg,
+    #0f5f3f 0%, #1a7f5f 20%, #0f5f3f 40%,
+    #0f5f3f 60%, #1a7f5f 80%, #0f5f3f 100%
+  );
+  background-size: 200% 100%;
+  animation: felt-shine 6s ease-in-out infinite;
+}

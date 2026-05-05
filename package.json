@@ -1,0 +1,18 @@
+{
+  "name": "poker-play",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter @poker/server dev",
+    "dev:web": "pnpm --filter @poker/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @poker/shared test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
