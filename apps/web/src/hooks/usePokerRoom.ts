@@ -23,6 +23,10 @@ export interface PlayerView {
   connected: boolean;
   /** Public hole cards (only populated at showdown for non-folded players). */
   revealedHole: string[];
+  /** Hand category at showdown (e.g. "two_pair"). Empty unless cards revealed. */
+  revealedCategory: string;
+  /** Guest "ready" flag — host is implicitly always ready. */
+  ready: boolean;
 }
 
 export interface WinnerView {
@@ -39,6 +43,7 @@ export interface SidePotView {
 export interface PokerRoomView {
   tableName: string;
   isPrivate: boolean;
+  hostId: string;
   pot: number;
   currentBet: number;
   minRaise: number;
@@ -47,6 +52,8 @@ export interface PokerRoomView {
   stage: string;
   dealerSeat: number;
   activeSeat: number;
+  /** Epoch ms when active player auto-folds. 0 if no timer armed. */
+  turnDeadline: number;
   community: string[];
   players: PlayerView[];
   winners: WinnerView[];
@@ -70,10 +77,16 @@ export interface UsePokerRoomResult {
   actionError: string | null;
   status: "connecting" | "connected" | "error" | "needs-join";
   sendAction: (action: Action) => void;
+  /** Guests toggle ready; ignored for host. */
+  sendReady: () => void;
+  /** Host requests start of the first hand. */
+  sendStart: () => void;
   /** True iff it's your turn to act. */
   isYourTurn: boolean;
   /** You as a PlayerView, if you're seated. */
   me: PlayerView | null;
+  /** True iff you're the room host. */
+  isHost: boolean;
 }
 
 export function usePokerRoom(roomId: string): UsePokerRoomResult {
@@ -87,8 +100,17 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
   );
 
   const roomRef = useRef<Room | null>(null);
+  /** Holds a deferred leave timer so React Strict Mode's mount→cleanup→mount
+      double-effect doesn't actually disconnect us (the second mount cancels it). */
+  const pendingLeaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // If a previous cleanup queued a leave, cancel it — we're still mounted.
+    if (pendingLeaveRef.current) {
+      clearTimeout(pendingLeaveRef.current);
+      pendingLeaveRef.current = null;
+    }
+
     let cancelled = false;
 
     function attachListeners(r: Room) {
@@ -104,26 +126,36 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const s: any = r.state;
         const players: PlayerView[] = [];
-        s.players?.forEach((p: PlayerView & { revealedHole?: string[] }) => {
-          const revealedHole: string[] = [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (p.revealedHole as any)?.forEach?.((c: string) =>
-            revealedHole.push(c),
-          );
-          players.push({
-            id: p.id,
-            name: p.name,
-            seat: p.seat,
-            chips: p.chips,
-            bet: p.bet,
-            totalBet: p.totalBet,
-            status: p.status,
-            hasActed: p.hasActed,
-            hasHoleCards: p.hasHoleCards,
-            connected: p.connected,
-            revealedHole,
-          });
-        });
+        s.players?.forEach(
+          (
+            p: PlayerView & {
+              revealedHole?: string[];
+              revealedCategory?: string;
+              ready?: boolean;
+            },
+          ) => {
+            const revealedHole: string[] = [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (p.revealedHole as any)?.forEach?.((c: string) =>
+              revealedHole.push(c),
+            );
+            players.push({
+              id: p.id,
+              name: p.name,
+              seat: p.seat,
+              chips: p.chips,
+              bet: p.bet,
+              totalBet: p.totalBet,
+              status: p.status,
+              hasActed: p.hasActed,
+              hasHoleCards: p.hasHoleCards,
+              connected: p.connected,
+              revealedHole,
+              revealedCategory: p.revealedCategory ?? "",
+              ready: !!p.ready,
+            });
+          },
+        );
         const winners: WinnerView[] = [];
         s.winners?.forEach((w: WinnerView) =>
           winners.push({
@@ -145,6 +177,7 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
         setView({
           tableName: s.tableName ?? "",
           isPrivate: !!s.isPrivate,
+          hostId: s.hostId ?? "",
           pot: s.pot ?? 0,
           currentBet: s.currentBet ?? 0,
           minRaise: s.minRaise ?? 0,
@@ -153,6 +186,7 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
           stage: s.stage ?? "waiting",
           dealerSeat: s.dealerSeat ?? -1,
           activeSeat: s.activeSeat ?? -1,
+          turnDeadline: s.turnDeadline ?? 0,
           community,
           players,
           winners,
@@ -218,10 +252,15 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     return () => {
       cancelled = true;
       const r = roomRef.current;
-      if (r) {
+      if (!r) return;
+      // Defer leave: if React Strict Mode immediately re-mounts this effect,
+      // the next setup will clear this timer and reuse the room. Real navigation
+      // away just means the leave fires 50ms later — not user-visible.
+      pendingLeaveRef.current = setTimeout(() => {
+        pendingLeaveRef.current = null;
         r.leave();
         setActiveRoom(null);
-      }
+      }, 50);
     };
   }, [roomId]);
 
@@ -237,6 +276,14 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     r.send("action", action);
   }, []);
 
+  const sendReady = useCallback(() => {
+    roomRef.current?.send("ready");
+  }, []);
+
+  const sendStart = useCallback(() => {
+    roomRef.current?.send("start");
+  }, []);
+
   const me =
     view && room
       ? view.players.find((p) => p.id === room.sessionId) ?? null
@@ -246,6 +293,7 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     view !== null &&
     view.activeSeat === me.seat &&
     me.status === "active";
+  const isHost = !!room && !!view && view.hostId === room.sessionId;
 
   return {
     room,
@@ -255,7 +303,10 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     actionError,
     status,
     sendAction,
+    sendReady,
+    sendStart,
     isYourTurn,
     me,
+    isHost,
   };
 }

@@ -19,6 +19,10 @@ export class Player extends Schema {
   @type("boolean") hasHoleCards = false;
   /** Public reveal of hole cards — populated only at showdown so all clients can see. */
   @type(["string"]) revealedHole = new ArraySchema<string>();
+  /** Hand category at showdown (e.g. "two_pair"). Empty unless cards revealed. */
+  @type("string") revealedCategory = "";
+  /** Guest "ready" flag — only meaningful in private rooms before the first hand. */
+  @type("boolean") ready = false;
 }
 
 export class SidePotInfo extends Schema {
@@ -41,6 +45,8 @@ export class PokerState extends Schema {
 
   @type("string") tableName = "";
   @type("boolean") isPrivate = false;
+  /** sessionId of the room host (first joiner). They control "start" in private rooms. */
+  @type("string") hostId = "";
 
   @type("string") stage: Stage = "waiting";
   @type("number") pot = 0;
@@ -53,4 +59,6 @@ export class PokerState extends Schema {
   @type("number") dealerSeat = -1;
   /** Seat of the player whose turn it is. -1 when no hand in progress. */
   @type("number") activeSeat = -1;
+  /** Epoch ms when the active player's turn auto-folds. 0 when no timer is armed. */
+  @type("number") turnDeadline = 0;
 }

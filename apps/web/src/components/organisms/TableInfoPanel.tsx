@@ -1,4 +1,5 @@
 import { NeonText } from "@/components/atoms/NeonText";
+import { formatChips } from "@/lib/utils";
 
 export interface TableInfoData {
   gameType: string;
@@ -18,7 +19,7 @@ export function TableInfoPanel({ info }: { info: TableInfoData }) {
         <Row label="Game Type" value={info.gameType} />
         <Row label="Blinds" value={info.blinds} />
         <Row label="Players" value={info.players} />
-        <Row label="Total Pot" value={`$${info.pot.toLocaleString()}`} accent />
+        <Row label="Total Pot" value={`$${formatChips(info.pot)}`} accent />
         {info.roomCode && <Row label="Code" value={info.roomCode} accent />}
       </div>
     </div>

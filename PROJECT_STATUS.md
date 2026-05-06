@@ -1,7 +1,7 @@
 # poker_play — Project Status
 
 > Tài liệu tổng hợp trạng thái kỹ thuật của dự án multiplayer Texas Hold'em.
-> Cập nhật lần cuối: **2026-05-05**.
+> Cập nhật lần cuối: **2026-05-06**.
 
 ---
 
@@ -219,6 +219,7 @@ src/
 | `test-private-room.mjs` | Create private room, wrong password rejected, correct password joins, both see each other |
 | `test-full-hand.mjs` | 2 clients, server auto-starts, hole cards delivered privately, drive full hand → showdown via `action` messages, chip conservation |
 | `test-reconnect.mjs` | Drop connection without consent, server marks `connected=false` + auto-fold, reconnect with token, sessionId + seat preserved, opponent sees reconnect |
+| `test-public-rooms.mjs` | Create public + private rooms, `GET /rooms/poker` lists only public room with metadata; private room hidden |
 
 ---
 
@@ -359,14 +360,14 @@ src/
 
 Mục tiêu: làm UX đủ tốt để mời bạn bè chơi thử công khai.
 
-- [ ] **Per-action timer** — 30s countdown, auto-fold khi timeout. UI: progress ring quanh active seat.
+- [x] **Per-action timer** — 30s countdown, auto-fold khi timeout. UI: progress ring quanh active seat (xanh → vàng → đỏ ở 5s cuối).
 - [ ] **Sound effects** — card deal, chip clink, check tap, fold whoosh, winner fanfare. Dùng [howler.js](https://howlerjs.com/) hoặc native `Audio()`. Asset packs free trên freesound.org.
 - [ ] **Hand history (in-memory)** — last 10 hands trong `state` schema (community cards, actions, winner). Hiển thị panel bên phải bàn.
-- [ ] **Mobile responsive** — bàn poker stack vertical trên mobile, ActionBar fixed bottom. Test trên iPhone SE / Pixel.
-- [ ] **Public room list** — wire Colyseus matchmake HTTP routes qua Express. `client.http.get('/matchmake/poker')` trả `RoomAvailable[]`.
+- [x] **Mobile responsive** — seats + cards thu nhỏ trên mobile (`sm:` breakpoints), ActionBar full-width fixed-bottom, top headers compact.
+- [x] **Public room list** — `GET /rooms/poker` trả `RoomAvailable[]` (Colyseus chiếm `/matchmake/*` cho POST). Dialog có toggle Public/Private. Lobby poll 5s.
 - [ ] **Better disconnect UX** — show "Alice reconnecting… (5s)" trên ghế trước khi auto-fold, cho người dùng thấy đang chờ.
 - [ ] **Player count online indicator** — real count từ `gameServer.presence`.
-- [ ] **Reveal losing hands** — show cả tay thua khi showdown để compare.
+- [x] **Reveal losing hands** — non-folded players ở showdown đều có `revealedHole` + `revealedCategory`; PlayerSeat hiển thị label hand category dưới cards (winner highlight neon).
 
 ### Phase 2 — Persistence & Accounts (1 tháng)
 

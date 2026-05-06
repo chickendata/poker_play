@@ -42,6 +42,24 @@ export async function joinRoomById(
   return room;
 }
 
+export interface PublicRoom {
+  roomId: string;
+  name: string;
+  metadata?: { tableName?: string; isPrivate?: boolean; hasPassword?: boolean };
+  clients: number;
+  maxClients: number;
+}
+
+/** Fetch the list of public (non-private) rooms via the server's /rooms/<name> endpoint. */
+export async function getAvailableRooms(
+  roomName = "poker",
+): Promise<PublicRoom[]> {
+  const response = await getColyseusClient().http.get<PublicRoom[]>(
+    `rooms/${roomName}`,
+  );
+  return response.data ?? [];
+}
+
 /**
  * Try to reconnect to a previous room using the stored token. Returns the room
  * on success, null if no token / token expired / wrong room.

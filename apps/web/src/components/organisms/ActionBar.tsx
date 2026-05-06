@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatChips } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleContext";
 
 export interface ActionBarProps {
   /** Chips you have left to put in the pot. */
@@ -23,6 +24,7 @@ export interface ActionBarProps {
 }
 
 export function ActionBar(props: ActionBarProps) {
+  const t = useT();
   const {
     chips,
     myBet,
@@ -56,19 +58,19 @@ export function ActionBar(props: ActionBarProps) {
   const canRaise = chips > owed && minTarget <= maxTarget;
 
   return (
-    <div className="bg-[#1a1a1a] border border-[#00ff88] rounded-lg p-4 shadow-lg shadow-[#00ff88]/30 flex flex-col gap-3 min-w-[320px]">
-      <div className="text-[#00ff88] font-bold text-sm uppercase tracking-wider neon-text">
-        Your action
+    <div className="bg-[#1a1a1a] border border-[#00ff88] rounded-lg p-3 sm:p-4 shadow-lg shadow-[#00ff88]/30 flex flex-col gap-2 sm:gap-3 w-full sm:min-w-[320px] sm:w-auto">
+      <div className="text-[#00ff88] font-bold text-xs sm:text-sm uppercase tracking-wider neon-text">
+        {t("action.title")}
       </div>
 
       <div className="flex gap-2">
         <ActionButton onClick={onFold} variant="danger">
-          Fold
+          {t("action.fold")}
         </ActionButton>
 
         {canCheck ? (
           <ActionButton onClick={onCheck} variant="neutral">
-            Check
+            {t("action.check")}
           </ActionButton>
         ) : (
           <ActionButton
@@ -76,8 +78,8 @@ export function ActionBar(props: ActionBarProps) {
             disabled={!canCall}
             variant="primary"
           >
-            Call ${owed.toLocaleString()}
-            {!canCall && " (insufficient)"}
+            {t("action.call", { amount: formatChips(owed) })}
+            {!canCall && ` ${t("action.insufficient")}`}
           </ActionButton>
         )}
 
@@ -86,8 +88,8 @@ export function ActionBar(props: ActionBarProps) {
           disabled={!canRaise}
           variant="primary"
         >
-          {isBet ? "Bet" : "Raise to"} ${target.toLocaleString()}
-          {target === maxTarget && " (All-in)"}
+          {isBet ? t("action.bet") : t("action.raiseTo")} ${formatChips(target)}
+          {target === maxTarget && ` ${t("action.allIn")}`}
         </ActionButton>
       </div>
 
@@ -137,7 +139,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex-1 px-3 py-2 rounded font-bold text-sm transition-all",
+        "flex-1 px-2 sm:px-3 py-2 rounded font-bold text-xs sm:text-sm transition-all",
         disabled && "opacity-40 cursor-not-allowed",
         variant === "primary" &&
           "bg-[#00ff88] text-black hover:shadow-lg hover:shadow-[#00ff88]/50",

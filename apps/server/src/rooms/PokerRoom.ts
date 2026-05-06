@@ -2,6 +2,7 @@ import { Room, Client, ServerError } from "colyseus";
 import {
   applyAction,
   computeSidePots,
+  evaluateBest,
   startHand,
   HAND_CATEGORIES,
   type Action,
@@ -16,12 +17,14 @@ import {
 } from "./schema/PokerState.js";
 
 const MAX_SEATS = 6;
-const STARTING_CHIPS = 1000;
+const STARTING_CHIPS_PUBLIC = 1000;
+const STARTING_CHIPS_PRIVATE = 2000;
 const SMALL_BLIND = 5;
 const BIG_BLIND = 10;
 const NEXT_HAND_DELAY_MS = 5000;
 const FIRST_HAND_DELAY_MS = 1500;
 const RECONNECT_GRACE_SECONDS = 30;
+const TURN_TIMEOUT_MS = 30_000;
 
 export interface CreateOptions {
   private?: boolean;
@@ -48,6 +51,14 @@ export class PokerRoom extends Room<PokerState> {
   private nextHandTimer: NodeJS.Timeout | null = null;
   private startHandTimer: NodeJS.Timeout | null = null;
 
+  /** Per-player starting chips. Set in onCreate based on isPrivate. */
+  private startingChips = STARTING_CHIPS_PUBLIC;
+
+  /** Per-turn auto-fold timer. */
+  private turnTimer: NodeJS.Timeout | null = null;
+  /** sessionId currently armed in turnTimer (so re-syncs for the same actor don't reset). */
+  private turnTimerActorId: string | null = null;
+
   /** Seat of the dealer for the LAST started hand (for rotating the button). */
   private lastDealerSeat = -1;
 
@@ -62,6 +73,9 @@ export class PokerRoom extends Room<PokerState> {
     this.state.isPrivate = isPrivate;
     this.state.smallBlind = SMALL_BLIND;
     this.state.bigBlind = BIG_BLIND;
+    this.startingChips = isPrivate
+      ? STARTING_CHIPS_PRIVATE
+      : STARTING_CHIPS_PUBLIC;
 
     this.setMetadata({
       tableName: this.state.tableName,
@@ -71,6 +85,14 @@ export class PokerRoom extends Room<PokerState> {
 
     this.onMessage<Action>("action", (client, msg) => {
       this.handleAction(client, msg);
+    });
+
+    this.onMessage("ready", (client) => {
+      this.handleReadyToggle(client);
+    });
+
+    this.onMessage("start", (client) => {
+      this.handleStartRequest(client);
     });
 
     console.log(
@@ -96,12 +118,18 @@ export class PokerRoom extends Room<PokerState> {
     player.name =
       options.name?.trim() || `Player-${client.sessionId.slice(0, 4)}`;
     player.seat = seat;
-    player.chips = STARTING_CHIPS;
+    player.chips = this.startingChips;
     player.status = "waiting";
+
+    // First joiner becomes the host (controls "start" in private rooms; implicitly ready).
+    if (!this.state.hostId) {
+      this.state.hostId = client.sessionId;
+      player.ready = true;
+    }
 
     this.state.players.set(client.sessionId, player);
     console.log(
-      `[room ${this.roomId}] ${player.name} joined seat ${seat}`,
+      `[room ${this.roomId}] ${player.name} joined seat ${seat}${client.sessionId === this.state.hostId ? " (host)" : ""}`,
     );
 
     // Re-send hole cards if a hand is in progress (rejoin scenario)
@@ -141,10 +169,32 @@ export class PokerRoom extends Room<PokerState> {
   }
 
   private removePlayer(sessionId: string) {
+    const wasHost = sessionId === this.state.hostId;
     this.state.players.delete(sessionId);
     this.holeByPlayer.delete(sessionId);
+
+    if (wasHost) this.reassignHost();
+
     if (!this.engine || this.engine.stage === "complete") {
       this.tryScheduleHand();
+    }
+  }
+
+  /** Promote the lowest-seat remaining connected player to host. */
+  private reassignHost() {
+    let next: Player | null = null;
+    this.state.players.forEach((p) => {
+      if (!p.connected) return;
+      if (!next || p.seat < next.seat) next = p;
+    });
+    if (next) {
+      this.state.hostId = (next as Player).id;
+      (next as Player).ready = true;
+      console.log(
+        `[room ${this.roomId}] host reassigned to ${(next as Player).name}`,
+      );
+    } else {
+      this.state.hostId = "";
     }
   }
 
@@ -156,6 +206,10 @@ export class PokerRoom extends Room<PokerState> {
 
     const eligible = this.eligiblePlayers();
     if (eligible.length < 2) return;
+
+    // Private rooms: the host explicitly starts the hand via "start" message.
+    // Public rooms: auto-start after a short delay.
+    if (this.state.isPrivate) return;
 
     this.startHandTimer = setTimeout(() => {
       this.startHandTimer = null;
@@ -176,6 +230,7 @@ export class PokerRoom extends Room<PokerState> {
     if (eligible.length < 2) {
       this.engine = null;
       this.holeByPlayer.clear();
+      this.clearTurnTimer();
       this.state.communityCards.clear();
       this.state.winners.clear();
       this.state.sidePots.clear();
@@ -190,6 +245,7 @@ export class PokerRoom extends Room<PokerState> {
         p.hasActed = false;
         p.hasHoleCards = false;
         p.revealedHole.clear();
+        p.revealedCategory = "";
         p.status = "waiting";
       }
       return;
@@ -228,6 +284,7 @@ export class PokerRoom extends Room<PokerState> {
     // Reset reveal slots and mark non-eligible seated players as "waiting"
     for (const sp of this.state.players.values()) {
       sp.revealedHole.clear();
+      sp.revealedCategory = "";
       if (!this.engine.players.find((ep) => ep.id === sp.id)) {
         sp.status = "waiting";
         sp.bet = 0;
@@ -244,6 +301,49 @@ export class PokerRoom extends Room<PokerState> {
     console.log(
       `[room ${this.roomId}] hand started — dealer seat ${this.lastDealerSeat}, ${this.engine.players.length} players`,
     );
+  }
+
+  /** Guest toggles their "ready" flag. Host is implicitly always ready. */
+  private handleReadyToggle(client: Client) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p) return;
+    if (client.sessionId === this.state.hostId) return; // host is always ready
+    if (this.engine && this.engine.stage !== "complete") return; // mid-hand: ignore
+    p.ready = !p.ready;
+  }
+
+  /** Host requests to start the first hand. Requires all eligible players ready. */
+  private handleStartRequest(client: Client) {
+    if (client.sessionId !== this.state.hostId) {
+      client.send("error", { message: "only_host_can_start" });
+      return;
+    }
+    if (this.engine && this.engine.stage !== "complete") {
+      client.send("error", { message: "hand_already_in_progress" });
+      return;
+    }
+
+    const eligible = this.eligiblePlayers();
+    if (eligible.length < 2) {
+      client.send("error", { message: "need_at_least_2_players" });
+      return;
+    }
+
+    const allReady = eligible.every((p) => p.ready);
+    if (!allReady) {
+      client.send("error", { message: "not_all_players_ready" });
+      return;
+    }
+
+    if (this.startHandTimer) {
+      clearTimeout(this.startHandTimer);
+      this.startHandTimer = null;
+    }
+    if (this.nextHandTimer) {
+      clearTimeout(this.nextHandTimer);
+      this.nextHandTimer = null;
+    }
+    this.startNextHand();
   }
 
   private handleAction(client: Client, msg: Action) {
@@ -270,16 +370,25 @@ export class PokerRoom extends Room<PokerState> {
     }
   }
 
-  /** When a hand reaches showdown, publish hole cards of non-folded players. */
+  /** When a hand reaches showdown, publish hole cards + hand category of non-folded players. */
   private revealShowdownCards() {
     if (!this.engine) return;
-    for (const ep of this.engine.players) {
-      if (ep.status === "folded" || !ep.hole) continue;
+    // Skip evaluation when only one player is non-folded (uncontested win, no showdown).
+    const contenders = this.engine.players.filter(
+      (p) => p.status !== "folded" && p.hole,
+    );
+    const showHands = contenders.length >= 2;
+
+    for (const ep of contenders) {
       const sp = this.state.players.get(ep.id);
-      if (!sp) continue;
+      if (!sp || !ep.hole) continue;
       sp.revealedHole.clear();
       sp.revealedHole.push(ep.hole[0]);
       sp.revealedHole.push(ep.hole[1]);
+      if (showHands) {
+        const rank = evaluateBest([...ep.hole, ...this.engine.community]);
+        sp.revealedCategory = HAND_CATEGORIES[rank.category];
+      }
     }
   }
 
@@ -360,6 +469,64 @@ export class PokerRoom extends Room<PokerState> {
         this.state.sidePots.push(sp);
       }
     }
+
+    this.refreshTurnTimer();
+  }
+
+  /* ────────────────  Per-turn timer  ──────────────── */
+
+  /** Arm/clear the auto-fold timer based on current engine state. Called after every sync. */
+  private refreshTurnTimer() {
+    const e = this.engine;
+    const actor =
+      e &&
+      e.stage !== "complete" &&
+      e.stage !== "showdown"
+        ? e.players[e.toActIdx]
+        : null;
+
+    // No actor (showdown / complete / no hand) → clear.
+    if (!actor || actor.status !== "active") {
+      this.clearTurnTimer();
+      return;
+    }
+
+    // Same actor as currently-armed timer — keep deadline (don't extend mid-think).
+    if (this.turnTimerActorId === actor.id && this.turnTimer) return;
+
+    this.clearTurnTimer();
+    this.turnTimerActorId = actor.id;
+    this.state.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+    this.turnTimer = setTimeout(() => this.onTurnTimeout(actor.id), TURN_TIMEOUT_MS);
+  }
+
+  private clearTurnTimer() {
+    if (this.turnTimer) {
+      clearTimeout(this.turnTimer);
+      this.turnTimer = null;
+    }
+    this.turnTimerActorId = null;
+    this.state.turnDeadline = 0;
+  }
+
+  /** Auto-fold the player whose turn timed out. */
+  private onTurnTimeout(actorId: string) {
+    this.turnTimer = null;
+    this.turnTimerActorId = null;
+
+    if (!this.engine) return;
+    const ep = this.engine.players[this.engine.toActIdx];
+    if (!ep || ep.id !== actorId || ep.status !== "active") return;
+
+    try {
+      this.engine = applyAction(this.engine, actorId, { type: "fold" });
+      console.log(`[room ${this.roomId}] auto-fold ${actorId} (turn timeout)`);
+      this.syncStateToSchema();
+      this.handleHandIfComplete();
+      this.maybeAutoFoldActor();
+    } catch (e) {
+      console.error(`[room ${this.roomId}] turn-timeout fold failed:`, e);
+    }
   }
 
   /* ────────────────  Helpers  ──────────────── */
@@ -382,6 +549,7 @@ export class PokerRoom extends Room<PokerState> {
   onDispose() {
     if (this.nextHandTimer) clearTimeout(this.nextHandTimer);
     if (this.startHandTimer) clearTimeout(this.startHandTimer);
+    this.clearTurnTimer();
     console.log(`[room ${this.roomId}] disposed`);
   }
 }

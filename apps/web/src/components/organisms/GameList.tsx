@@ -3,6 +3,7 @@
 import { Zap } from "lucide-react";
 import { GameStatusBadge } from "@/components/atoms/GameStatusBadge";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleContext";
 
 export interface GameRow {
   id: string;
@@ -26,16 +27,17 @@ export function GameList({
   onSelect: (id: string) => void;
   onJoin: (id: string) => void;
 }) {
+  const t = useT();
   return (
     <div>
       <h2 className="text-2xl font-bold text-[#00ff88] mb-4 flex items-center gap-2">
         <Zap className="w-6 h-6" />
-        Available Games
+        {t("lobby.availableGames")}
       </h2>
       <div className="space-y-3">
         {games.length === 0 && (
           <div className="border border-[#2a2a2a] rounded-lg p-8 text-center text-gray-500">
-            No public games right now. Create one or join by code.
+            {t("lobby.noGames")}
           </div>
         )}
         {games.map((g) => {
@@ -58,13 +60,13 @@ export function GameList({
                     <GameStatusBadge status={g.status} />
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <Cell label="Blinds" value={g.blinds} />
+                    <Cell label={t("lobby.blinds")} value={g.blinds} />
                     <Cell
-                      label="Players"
+                      label={t("lobby.players")}
                       value={`${g.players}/${g.maxPlayers}`}
                     />
-                    <Cell label="Buy-In" value={g.buyIn} />
-                    <Cell label="Avg Pot" value={g.avgPot} />
+                    <Cell label={t("lobby.buyIn")} value={g.buyIn} />
+                    <Cell label={t("lobby.avgPot")} value={g.avgPot} />
                   </div>
                 </div>
                 <button
@@ -80,7 +82,7 @@ export function GameList({
                       : "bg-[#00ff88] text-black hover:shadow-lg hover:shadow-[#00ff88]/50 active:scale-95",
                   )}
                 >
-                  {full ? "Full" : "Join"}
+                  {full ? t("lobby.full") : t("lobby.join")}
                 </button>
               </div>
             </div>

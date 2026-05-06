@@ -75,8 +75,15 @@ async function main() {
   const roomB = await cB.joinById(roomA.roomId, { name: "Bob" });
   roomB.onMessage("hole", (m) => (holes.B = m.cards));
 
-  // Wait for the server to auto-start the hand (FIRST_HAND_DELAY_MS = 1500)
-  console.log("[..] waiting for hand to start (auto, ~1.5s)…");
+  // Private rooms wait for explicit start. Bob readies, Alice (host) starts.
+  await new Promise((r) => setTimeout(r, 100));
+  console.log("[B] ready");
+  roomB.send("ready");
+  await new Promise((r) => setTimeout(r, 100));
+  console.log("[A] start");
+  roomA.send("start");
+
+  console.log("[..] waiting for hand to start…");
   await waitFor(() => roomA.state.stage === "preflop", 6000);
   // Give a beat for hole cards to arrive
   await new Promise((r) => setTimeout(r, 200));
@@ -153,8 +160,9 @@ async function main() {
 
   if (final.winners.length === 0) throw new Error("no winner declared");
   const totalChips = final.players.reduce((s, p) => s + p.chips, 0);
-  if (totalChips !== 2000)
-    throw new Error(`chip total drift: ${totalChips} (expected 2000)`);
+  // Private rooms: 2 players × 2000 starting chips = 4000.
+  if (totalChips !== 4000)
+    throw new Error(`chip total drift: ${totalChips} (expected 4000)`);
 
   console.log("\n✅ PASS — full hand drives to showdown, pot awarded, chips conserved");
 

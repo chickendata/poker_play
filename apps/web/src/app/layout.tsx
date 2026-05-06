@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LocaleProvider } from "@/i18n/LocaleContext";
 
 export const metadata: Metadata = {
   title: "Poker Play",
@@ -12,8 +13,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen antialiased">{children}</body>
+    <html lang="vi">
+      <body className="min-h-screen antialiased">
+        <LocaleProvider>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

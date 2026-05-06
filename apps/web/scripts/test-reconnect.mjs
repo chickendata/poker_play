@@ -41,6 +41,12 @@ async function main() {
   const roomB = await cB.joinById(roomId, { name: "Bob", password: "secret" });
   console.log(`[B] joined session=${roomB.sessionId}`);
 
+  // Private room: Bob readies, Alice (host) starts.
+  await new Promise((r) => setTimeout(r, 100));
+  roomB.send("ready");
+  await new Promise((r) => setTimeout(r, 100));
+  roomA.send("start");
+
   // Wait for hand to start
   await waitFor(() => roomA.state.stage === "preflop", 5000);
   console.log("[..] hand started");
