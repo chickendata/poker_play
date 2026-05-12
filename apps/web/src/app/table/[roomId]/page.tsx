@@ -28,6 +28,8 @@ export default function TablePage({
     sendAction,
     sendReady,
     sendStart,
+    sendAddBot,
+    sendRemoveBot,
     isYourTurn,
     me,
     isHost,
@@ -86,6 +88,7 @@ export default function TablePage({
       revealedHole: p.revealedHole,
       revealedCategory: p.revealedCategory,
       isWinner: winnerIds.has(p.id),
+      isBot: p.isBot,
       turnDeadline: isActive ? view.turnDeadline : 0,
       turnTotalMs: 30_000,
     };
@@ -173,10 +176,13 @@ export default function TablePage({
                 id: p.id,
                 name: p.name,
                 ready: p.ready,
+                isBot: p.isBot,
                 isHost: p.id === view.hostId,
               }))}
               onReady={sendReady}
               onStart={sendStart}
+              onAddBot={sendAddBot}
+              onRemoveBot={sendRemoveBot}
             />
           ) : (
             <div className="bg-[#1a1a1a] border border-[#00ff88]/40 rounded-lg px-6 py-3 text-[#a0a0a0] text-sm">
@@ -252,17 +258,34 @@ function PrivateLobbyPanel({
   players,
   onReady,
   onStart,
+  onAddBot,
+  onRemoveBot,
 }: {
   isHost: boolean;
   myReady: boolean;
-  players: { id: string; name: string; ready: boolean; isHost: boolean }[];
+  players: {
+    id: string;
+    name: string;
+    ready: boolean;
+    isBot: boolean;
+    isHost: boolean;
+  }[];
   onReady: () => void;
   onStart: () => void;
+  onAddBot: () => void;
+  onRemoveBot: (botId: string) => void;
 }) {
   const t = useT();
+  const MAX_SEATS = 6;
+  const MAX_BOTS = 3;
   const guests = players.filter((p) => !p.isHost);
-  const allReady = players.length >= 2 && guests.every((p) => p.ready);
-  const notReady = guests.filter((p) => !p.ready).length;
+  // Bots are always ready; only humans need to ack.
+  const allReady = players.length >= 2 && guests.every((p) => p.ready || p.isBot);
+  const notReady = guests.filter((p) => !p.ready && !p.isBot).length;
+  const botCount = players.filter((p) => p.isBot).length;
+  const seatsFull = players.length >= MAX_SEATS;
+  const botCapReached = botCount >= MAX_BOTS;
+  const canAddBot = isHost && !seatsFull && !botCapReached;
 
   return (
     <div className="bg-[#1a1a1a] border border-[#00ff88] rounded-lg p-4 sm:p-5 shadow-lg shadow-[#00ff88]/30 flex flex-col gap-3 w-full sm:min-w-[360px] sm:w-auto">
@@ -276,30 +299,70 @@ function PrivateLobbyPanel({
             key={p.id}
             className="flex items-center justify-between gap-3 px-2 py-1 rounded bg-black/40"
           >
-            <span className="text-white truncate">
-              {p.name}
+            <span className="text-white truncate flex items-center gap-2">
+              <span className="truncate">{p.name}</span>
               {p.isHost && (
-                <span className="ml-2 text-[10px] text-[#ffaa00] font-bold">
+                <span className="text-[10px] text-[#ffaa00] font-bold">
                   {t("lobby.private.host")}
                 </span>
               )}
+              {p.isBot && (
+                <span className="text-[10px] text-[#9966ff] font-bold border border-[#9966ff]/60 rounded px-1">
+                  {t("lobby.private.bot")}
+                </span>
+              )}
             </span>
-            {p.isHost ? (
-              <span className="text-[10px] uppercase tracking-wider text-[#a0a0a0]">
-                {t("lobby.private.implicitReady")}
-              </span>
-            ) : p.ready ? (
-              <span className="text-[10px] uppercase tracking-wider text-[#00ff88] neon-text">
-                {t("lobby.private.ready")}
-              </span>
-            ) : (
-              <span className="text-[10px] uppercase tracking-wider text-gray-500">
-                {t("lobby.private.notReady")}
-              </span>
-            )}
+            <span className="flex items-center gap-2">
+              {p.isHost ? (
+                <span className="text-[10px] uppercase tracking-wider text-[#a0a0a0]">
+                  {t("lobby.private.implicitReady")}
+                </span>
+              ) : p.isBot ? (
+                <span className="text-[10px] uppercase tracking-wider text-[#9966ff]">
+                  {t("lobby.private.botReady")}
+                </span>
+              ) : p.ready ? (
+                <span className="text-[10px] uppercase tracking-wider text-[#00ff88] neon-text">
+                  {t("lobby.private.ready")}
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                  {t("lobby.private.notReady")}
+                </span>
+              )}
+              {isHost && p.isBot && (
+                <button
+                  onClick={() => onRemoveBot(p.id)}
+                  className="text-gray-400 hover:text-red-400 text-base leading-none"
+                  title={t("lobby.private.removeBot")}
+                  aria-label={t("lobby.private.removeBot")}
+                >
+                  ×
+                </button>
+              )}
+            </span>
           </li>
         ))}
       </ul>
+
+      {isHost && (
+        <button
+          onClick={onAddBot}
+          disabled={!canAddBot}
+          className={
+            "px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider border transition-all " +
+            (canAddBot
+              ? "border-[#9966ff] text-[#9966ff] hover:bg-[#9966ff]/10"
+              : "border-gray-700 text-gray-600 cursor-not-allowed")
+          }
+        >
+          {seatsFull
+            ? t("lobby.private.addBotFull")
+            : botCapReached
+              ? t("lobby.private.addBotMax", { max: MAX_BOTS })
+              : t("lobby.private.addBot")}
+        </button>
+      )}
 
       {isHost ? (
         <button

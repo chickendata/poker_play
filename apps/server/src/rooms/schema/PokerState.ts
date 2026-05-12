@@ -23,6 +23,8 @@ export class Player extends Schema {
   @type("string") revealedCategory = "";
   /** Guest "ready" flag — only meaningful in private rooms before the first hand. */
   @type("boolean") ready = false;
+  /** True for AI players added by the host. They have no real client. */
+  @type("boolean") isBot = false;
 }
 
 export class SidePotInfo extends Schema {

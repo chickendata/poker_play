@@ -105,6 +105,12 @@ const TABLE: Record<Locale, Record<string, string>> = {
     "lobby.private.startNotReady": "{n} chưa sẵn sàng",
     "lobby.private.btnReady": "Bấm khi đã sẵn sàng",
     "lobby.private.btnReadyOn": "✓ Sẵn sàng (bấm để huỷ)",
+    "lobby.private.bot": "BOT",
+    "lobby.private.botReady": "tự động",
+    "lobby.private.addBot": "+ Thêm bot",
+    "lobby.private.addBotFull": "Hết chỗ",
+    "lobby.private.addBotMax": "Tối đa {max} bot",
+    "lobby.private.removeBot": "Bỏ bot",
 
     // Winner banner
     "winner.complete": "Ván kết thúc",
@@ -116,6 +122,7 @@ const TABLE: Record<Locale, Record<string, string>> = {
     "seat.allIn": "All-in",
     "seat.waiting": "Chờ",
     "seat.you": " (bạn)",
+    "seat.bot": "BOT",
 
     // Pot display
     "pot.label": "Pot",
@@ -232,6 +239,12 @@ const TABLE: Record<Locale, Record<string, string>> = {
     "lobby.private.startNotReady": "{n} not ready",
     "lobby.private.btnReady": "Click when ready",
     "lobby.private.btnReadyOn": "✓ Ready (click to cancel)",
+    "lobby.private.bot": "BOT",
+    "lobby.private.botReady": "auto",
+    "lobby.private.addBot": "+ Add bot",
+    "lobby.private.addBotFull": "Table full",
+    "lobby.private.addBotMax": "Max {max} bots",
+    "lobby.private.removeBot": "Remove bot",
 
     // Winner banner
     "winner.complete": "Hand complete",
@@ -243,6 +256,7 @@ const TABLE: Record<Locale, Record<string, string>> = {
     "seat.allIn": "All-in",
     "seat.waiting": "Waiting",
     "seat.you": " (you)",
+    "seat.bot": "BOT",
 
     // Pot display
     "pot.label": "Pot",

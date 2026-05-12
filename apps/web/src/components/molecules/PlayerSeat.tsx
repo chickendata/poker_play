@@ -16,6 +16,8 @@ export interface PlayerSeatData {
   isYou?: boolean;
   isActive?: boolean;
   isDealer?: boolean;
+  /** AI player added by the room host. */
+  isBot?: boolean;
   hasHoleCards: boolean;
   /** Set only for "you" — own face-up cards. */
   holeCards?: string[] | null;
@@ -85,11 +87,21 @@ export function PlayerSeat({ player }: { player: PlayerSeatData }) {
       })()}
 
       <div className="relative">
+        {/* BOT badge (top of avatar) */}
+        {player.isBot && (
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 px-1.5 py-0.5 rounded bg-[#9966ff] text-black text-[8px] sm:text-[10px] font-bold uppercase tracking-wider shadow shadow-[#9966ff]/50">
+            {t("seat.bot")}
+          </div>
+        )}
         {/* Seat */}
         <div
           className={cn(
             "w-20 h-20 sm:w-32 sm:h-32 rounded-full border-2 bg-gradient-to-br from-[#0f5f3f] to-[#0a3f2f] flex flex-col items-center justify-center shadow-lg shadow-[#00ff88]/20 backdrop-blur-sm",
-            player.isActive ? "border-[#00ff88]" : "border-[#1a7f5f]",
+            player.isActive
+              ? "border-[#00ff88]"
+              : player.isBot
+                ? "border-[#9966ff]/70"
+                : "border-[#1a7f5f]",
           )}
         >
           <div className="text-[10px] sm:text-sm font-semibold text-[#f5f5f5] mb-1 sm:mb-2 text-center px-1 sm:px-2 truncate max-w-[72px] sm:max-w-28">

@@ -15,6 +15,7 @@ import {
   SidePotInfo,
   Winner,
 } from "./schema/PokerState.js";
+import { decideBotAction } from "./botAI.js";
 
 const MAX_SEATS = 6;
 const STARTING_CHIPS_PUBLIC = 1000;
@@ -25,6 +26,17 @@ const NEXT_HAND_DELAY_MS = 5000;
 const FIRST_HAND_DELAY_MS = 1500;
 const RECONNECT_GRACE_SECONDS = 30;
 const TURN_TIMEOUT_MS = 30_000;
+const MAX_BOTS = 3;
+const BOT_ACTION_DELAY_MIN_MS = 800;
+const BOT_ACTION_DELAY_MAX_MS = 2200;
+const BOT_NAMES = [
+  "Sully",
+  "Maverick",
+  "Vega",
+  "Nox",
+  "Echo",
+  "Rook",
+];
 
 export interface CreateOptions {
   private?: boolean;
@@ -58,6 +70,11 @@ export class PokerRoom extends Room<PokerState> {
   private turnTimer: NodeJS.Timeout | null = null;
   /** sessionId currently armed in turnTimer (so re-syncs for the same actor don't reset). */
   private turnTimerActorId: string | null = null;
+
+  /** Pending bot action timer; fires after a humanizing delay. */
+  private botActionTimer: NodeJS.Timeout | null = null;
+  /** Bot id currently armed in botActionTimer. */
+  private botActionForId: string | null = null;
 
   /** Seat of the dealer for the LAST started hand (for rotating the button). */
   private lastDealerSeat = -1;
@@ -93,6 +110,14 @@ export class PokerRoom extends Room<PokerState> {
 
     this.onMessage("start", (client) => {
       this.handleStartRequest(client);
+    });
+
+    this.onMessage("addBot", (client) => {
+      this.handleAddBot(client);
+    });
+
+    this.onMessage<{ id: string }>("removeBot", (client, msg) => {
+      this.handleRemoveBot(client, msg);
     });
 
     console.log(
@@ -180,11 +205,11 @@ export class PokerRoom extends Room<PokerState> {
     }
   }
 
-  /** Promote the lowest-seat remaining connected player to host. */
+  /** Promote the lowest-seat remaining connected human to host. Bots never host. */
   private reassignHost() {
     let next: Player | null = null;
     this.state.players.forEach((p) => {
-      if (!p.connected) return;
+      if (!p.connected || p.isBot) return;
       if (!next || p.seat < next.seat) next = p;
     });
     if (next) {
@@ -471,6 +496,7 @@ export class PokerRoom extends Room<PokerState> {
     }
 
     this.refreshTurnTimer();
+    this.maybeScheduleBotAction();
   }
 
   /* ────────────────  Per-turn timer  ──────────────── */
@@ -529,6 +555,146 @@ export class PokerRoom extends Room<PokerState> {
     }
   }
 
+  /* ────────────────  Bots  ──────────────── */
+
+  private handleAddBot(client: Client) {
+    if (client.sessionId !== this.state.hostId) {
+      client.send("error", { message: "only_host_can_add_bot" });
+      return;
+    }
+    if (!this.state.isPrivate) {
+      client.send("error", { message: "bots_only_in_private_rooms" });
+      return;
+    }
+    if (this.engine && this.engine.stage !== "complete") {
+      client.send("error", { message: "cannot_modify_bots_mid_hand" });
+      return;
+    }
+    let botCount = 0;
+    this.state.players.forEach((p) => {
+      if (p.isBot) botCount++;
+    });
+    if (botCount >= MAX_BOTS) {
+      client.send("error", { message: "max_bots_reached" });
+      return;
+    }
+    const seat = this.findFreeSeat();
+    if (seat === -1) {
+      client.send("error", { message: "table_full" });
+      return;
+    }
+
+    const usedNames = new Set<string>();
+    this.state.players.forEach((p) => usedNames.add(p.name));
+    const baseName =
+      BOT_NAMES.find((n) => !usedNames.has(`Bot ${n}`)) ??
+      BOT_NAMES[botCount % BOT_NAMES.length];
+
+    const botId = `bot_${this.roomId.slice(0, 4)}_${Date.now().toString(36).slice(-5)}_${seat}`;
+    const bot = new Player();
+    bot.id = botId;
+    bot.name = `Bot ${baseName}`;
+    bot.seat = seat;
+    bot.chips = this.startingChips;
+    bot.status = "waiting";
+    bot.connected = true;
+    bot.ready = true;
+    bot.isBot = true;
+    this.state.players.set(botId, bot);
+
+    console.log(
+      `[room ${this.roomId}] bot ${bot.name} added at seat ${seat}`,
+    );
+  }
+
+  private handleRemoveBot(client: Client, msg: { id: string }) {
+    if (client.sessionId !== this.state.hostId) {
+      client.send("error", { message: "only_host_can_remove_bot" });
+      return;
+    }
+    if (this.engine && this.engine.stage !== "complete") {
+      client.send("error", { message: "cannot_modify_bots_mid_hand" });
+      return;
+    }
+    const p = this.state.players.get(msg?.id ?? "");
+    if (!p || !p.isBot) {
+      client.send("error", { message: "not_a_bot" });
+      return;
+    }
+    console.log(`[room ${this.roomId}] bot ${p.name} removed`);
+    this.removePlayer(p.id);
+  }
+
+  /** If the current actor is a bot, schedule it to act after a humanizing delay. */
+  private maybeScheduleBotAction() {
+    const e = this.engine;
+    if (!e || e.stage === "complete" || e.stage === "showdown") {
+      this.clearBotActionTimer();
+      return;
+    }
+    const ep = e.players[e.toActIdx];
+    if (!ep || ep.status !== "active") {
+      this.clearBotActionTimer();
+      return;
+    }
+    const sp = this.state.players.get(ep.id);
+    if (!sp || !sp.isBot) {
+      this.clearBotActionTimer();
+      return;
+    }
+    // Already armed for this same bot — let it fire.
+    if (this.botActionForId === ep.id && this.botActionTimer) return;
+
+    this.clearBotActionTimer();
+    this.botActionForId = ep.id;
+    const delay =
+      BOT_ACTION_DELAY_MIN_MS +
+      Math.random() * (BOT_ACTION_DELAY_MAX_MS - BOT_ACTION_DELAY_MIN_MS);
+    this.botActionTimer = setTimeout(() => this.runBotAction(ep.id), delay);
+  }
+
+  private clearBotActionTimer() {
+    if (this.botActionTimer) clearTimeout(this.botActionTimer);
+    this.botActionTimer = null;
+    this.botActionForId = null;
+  }
+
+  private runBotAction(botId: string) {
+    this.botActionTimer = null;
+    this.botActionForId = null;
+
+    if (!this.engine) return;
+    const ep = this.engine.players[this.engine.toActIdx];
+    if (!ep || ep.id !== botId || ep.status !== "active") return;
+
+    let action: Action;
+    try {
+      action = decideBotAction(this.engine, botId);
+    } catch (e) {
+      console.error(`[room ${this.roomId}] bot decide for ${botId} failed:`, e);
+      action = { type: "fold" };
+    }
+
+    try {
+      this.engine = applyAction(this.engine, botId, action);
+    } catch (e) {
+      console.error(
+        `[room ${this.roomId}] bot ${botId} action ${action.type} rejected, folding:`,
+        e,
+      );
+      try {
+        this.engine = applyAction(this.engine, botId, { type: "fold" });
+      } catch (err) {
+        console.error(`[room ${this.roomId}] bot fold also failed:`, err);
+        return;
+      }
+    }
+
+    this.syncStateToSchema();
+    this.handleHandIfComplete();
+    this.maybeAutoFoldActor();
+  }
+
   /* ────────────────  Helpers  ──────────────── */
 
   private eligiblePlayers(): Player[] {
@@ -550,6 +716,7 @@ export class PokerRoom extends Room<PokerState> {
     if (this.nextHandTimer) clearTimeout(this.nextHandTimer);
     if (this.startHandTimer) clearTimeout(this.startHandTimer);
     this.clearTurnTimer();
+    this.clearBotActionTimer();
     console.log(`[room ${this.roomId}] disposed`);
   }
 }

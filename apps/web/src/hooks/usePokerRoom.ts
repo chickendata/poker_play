@@ -27,6 +27,8 @@ export interface PlayerView {
   revealedCategory: string;
   /** Guest "ready" flag — host is implicitly always ready. */
   ready: boolean;
+  /** True for AI players added by the host. */
+  isBot: boolean;
 }
 
 export interface WinnerView {
@@ -81,6 +83,10 @@ export interface UsePokerRoomResult {
   sendReady: () => void;
   /** Host requests start of the first hand. */
   sendStart: () => void;
+  /** Host-only: add an AI bot to the table (private rooms, pre-hand). */
+  sendAddBot: () => void;
+  /** Host-only: remove a bot from the table (private rooms, pre-hand). */
+  sendRemoveBot: (botId: string) => void;
   /** True iff it's your turn to act. */
   isYourTurn: boolean;
   /** You as a PlayerView, if you're seated. */
@@ -132,6 +138,7 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
               revealedHole?: string[];
               revealedCategory?: string;
               ready?: boolean;
+              isBot?: boolean;
             },
           ) => {
             const revealedHole: string[] = [];
@@ -153,6 +160,7 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
               revealedHole,
               revealedCategory: p.revealedCategory ?? "",
               ready: !!p.ready,
+              isBot: !!p.isBot,
             });
           },
         );
@@ -284,6 +292,14 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     roomRef.current?.send("start");
   }, []);
 
+  const sendAddBot = useCallback(() => {
+    roomRef.current?.send("addBot");
+  }, []);
+
+  const sendRemoveBot = useCallback((botId: string) => {
+    roomRef.current?.send("removeBot", { id: botId });
+  }, []);
+
   const me =
     view && room
       ? view.players.find((p) => p.id === room.sessionId) ?? null
@@ -305,6 +321,8 @@ export function usePokerRoom(roomId: string): UsePokerRoomResult {
     sendAction,
     sendReady,
     sendStart,
+    sendAddBot,
+    sendRemoveBot,
     isYourTurn,
     me,
     isHost,
